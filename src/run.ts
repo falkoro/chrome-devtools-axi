@@ -158,6 +158,11 @@ export async function waitForDuration(
   callTool: CallTool,
   ms: number,
 ): Promise<void> {
+  if (!Number.isFinite(ms)) {
+    throw new CdpError(`Invalid wait duration: ${ms}`, "VALIDATION_ERROR", [
+      "Pass a finite number of milliseconds, e.g. `await page.wait(1000)`",
+    ]);
+  }
   let remaining = ms;
   do {
     const chunk = Math.min(remaining, WAIT_CHUNK_MS);

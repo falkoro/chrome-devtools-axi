@@ -296,6 +296,31 @@ describe("createPageHelper", () => {
     ]);
   });
 
+  it("page.wait sends the next chunk only after the previous sleep finishes (#157)", async () => {
+    let finishFirst!: (value: string) => void;
+    callTool
+      .mockReturnValueOnce(new Promise<string>((r) => (finishFirst = r)))
+      .mockResolvedValue("");
+
+    const pending = createPageHelper(callTool).wait(25000);
+    await new Promise((r) => setTimeout(r, 0));
+    expect(callTool).toHaveBeenCalledTimes(1);
+
+    finishFirst("");
+    await pending;
+    expect(callTool).toHaveBeenCalledTimes(2);
+  });
+
+  it("page.wait rejects a non-finite duration without sending a call", async () => {
+    const page = createPageHelper(callTool);
+
+    await expect(page.wait(Infinity)).rejects.toMatchObject({
+      code: "VALIDATION_ERROR",
+      message: expect.stringContaining("Infinity"),
+    });
+    expect(callTool).not.toHaveBeenCalled();
+  });
+
   it("page.wait with string sends a callable that resolves once the selector matches", async () => {
     callTool.mockResolvedValueOnce("");
 
