@@ -7,15 +7,17 @@
  * Survives across short-lived CLI processes the same way the snapshot
  * generation counter does: a file in the active session's state dir.
  * `select_page` writes the caller-supplied id. `new_page` (open / newpage)
- * records the created tab when exactly one complete row in that tool's own
- * dump has a URL matching `args.url` — not a `list_pages` call, not
- * `[selected]`, and not every `N:` line after `## Pages`. Title
- * continuations, zero matches, and two matching URLs clear the session id
- * so the next page-scoped call fails loud until an explicit `select_page`.
- * Extra complete rows that do not match (for example `about:blank`) are
- * ignored. `close_page` of the selected id also clears it, and so does the
- * bridge when chrome-devtools-mcp reports a browser reconnect that reissues
- * every page id (`didMcpPageIdentityChange` in `src/bridge.ts`).
+ * records the created tab: the one complete row in that tool's own dump that
+ * ends in ` [selected]`. chrome-devtools-mcp selects the page it creates,
+ * serializes tool calls, and appends that suffix after the ` (url)` wrapper,
+ * so a single-line page title cannot put it at the end of a row. The URL is
+ * not used: it can change while loading (redirects, query rewrites) and need
+ * not be unique (#146, #155, #170). Not a `list_pages` call, and not every
+ * `N:` line after `## Pages`. Any dump `createdPageIdFromNewPageDump` rejects
+ * clears the session id so the next page-scoped call fails loud until an
+ * explicit `select_page`. `close_page` of the selected id also clears it,
+ * and so does the bridge when chrome-devtools-mcp reports a browser reconnect
+ * that reissues every page id (`didMcpPageIdentityChange` in `src/bridge.ts`).
  */
 
 import {
@@ -98,11 +100,11 @@ export function overlaySessionSelected<
 }
 
 /**
- * Record routing after a successful browser-scoped tool. Never reads
- * `[selected]` — that marker is display-only on `list_pages`.
+ * Record routing after a successful browser-scoped tool. `[selected]` on
+ * `list_pages` is display-only; only `new_page`'s own dump is read for it.
  *
- * `new_page` records the unique complete row whose URL matches `args.url`.
- * Otherwise the session id is cleared (do not keep a prior dump guess).
+ * `new_page` records the unique complete row MCP marked selected. Otherwise
+ * the session id is cleared (do not keep a prior dump guess).
  */
 export function rememberToolRouting(
   name: string,
@@ -114,8 +116,7 @@ export function rememberToolRouting(
     return;
   }
   if (name === "new_page") {
-    const requested = typeof args.url === "string" ? args.url : "";
-    const created = createdPageIdFromNewPageDump(result, requested);
+    const created = createdPageIdFromNewPageDump(result);
     if (created !== null) setSelectedPageId(created);
     else clearSelectedPageId();
     return;
@@ -131,6 +132,10 @@ const MCP_OTHER_SECTION =
 const GENERIC_SCHEME_SLASH_URL = /^[a-z][a-z0-9+.-]*:\/\//i;
 const COLON_ONLY_SCHEME_URL = /^(?:about:|data:|view-source:|blob:)/i;
 const PAGE_ID_LINE = /^(\d+):\s*(.*)$/;
+const MCP_SELECTED_SUFFIX = / \[selected\]$/;
+// MCP moved its selection off a page that closed; the marker is no longer
+// the created tab.
+const MCP_SELECTION_FALLBACK = /^Note: the previously selected page /;
 
 function isSchemeUrl(label: string): boolean {
   return (
@@ -169,47 +174,50 @@ function pageUrlFromLabel(rest: string): string {
   return body;
 }
 
-function urlsMatch(pageUrl: string, requested: string): boolean {
-  if (!requested) return false;
-  if (pageUrl === requested) return true;
-  const trimSlash = (url: string) =>
-    url.length > 1 && url.endsWith("/") ? url.slice(0, -1) : url;
-  return trimSlash(pageUrl) === trimSlash(requested);
-}
-
 /**
  * Created page id from a `new_page` dump, or null when the dump is
- * ambiguous. The created id is the unique complete row in the last
- * `## Pages` block whose URL matches `requestedUrl`. Title continuations
- * such as `404: Not Found` are not page ids and fail the dump. Extra
- * complete rows that do not match (`about:blank`, another tab) are
- * ignored. Two matching URLs, or none, leave the id unset. Extension
- * pages are never routing targets. Does not read `[selected]` or walk
+ * ambiguous. The created id is the unique complete row in the one
+ * `## Pages` block that ends in MCP's ` [selected]` suffix. Titles are
+ * untrusted: one with newlines can split the real row and push its tail past
+ * a forged header, but MCP always appends ` [selected]` to the created tab's
+ * row, so the real marker is still somewhere in the dump. Every line of the
+ * whole dump ending in ` [selected]` is therefore counted, and anything but
+ * exactly one (the matched row) fails the dump. Title continuations such as
+ * `404: Not Found` or any other non-row line in the block, a second
+ * `## Pages` header, a repeated page id (a title line posing as an existing
+ * tab's row), and MCP's selection-fallback note also fail it.
+ * Extension pages are never routing targets. Does not walk
  * `collapsePageRows`.
  */
-export function createdPageIdFromNewPageDump(
-  text: string,
-  requestedUrl: string,
-): number | null {
+export function createdPageIdFromNewPageDump(text: string): number | null {
   let inPages = false;
-  let matchedIds: number[] = [];
+  let seenPages = false;
+  const matchedIds: number[] = [];
+  const listedIds = new Set<number>();
+  let markedLines = 0;
   let incomplete = false;
   for (const raw of text.split(/\r?\n/)) {
     const line = raw.trim();
+    if (MCP_SELECTION_FALLBACK.test(line)) return null;
+    if (MCP_SELECTED_SUFFIX.test(line)) markedLines++;
     if (MCP_PAGES_HEADER.test(line)) {
-      inPages = true;
-      matchedIds = [];
-      incomplete = false;
+      if (seenPages) return null;
+      seenPages = inPages = true;
       continue;
     }
     if (MCP_OTHER_SECTION.test(line)) {
       inPages = false;
       continue;
     }
-    if (!inPages) continue;
+    if (!inPages || line.length === 0) continue;
     const m = line.match(PAGE_ID_LINE);
-    if (!m) continue;
+    if (!m) {
+      incomplete = true;
+      continue;
+    }
     const id = Number.parseInt(m[1], 10);
+    if (listedIds.has(id)) return null;
+    listedIds.add(id);
     const rest = m[2];
     if (!isCompletePageLabel(rest)) {
       incomplete = true;
@@ -217,9 +225,9 @@ export function createdPageIdFromNewPageDump(
     }
     const pageUrl = pageUrlFromLabel(rest);
     if (pageUrl.startsWith("chrome-extension:")) continue;
-    if (urlsMatch(pageUrl, requestedUrl)) matchedIds.push(id);
+    if (MCP_SELECTED_SUFFIX.test(rest)) matchedIds.push(id);
   }
   if (incomplete) return null;
-  if (matchedIds.length !== 1) return null;
+  if (matchedIds.length !== 1 || markedLines !== 1) return null;
   return matchedIds[0];
 }
