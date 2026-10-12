@@ -274,6 +274,28 @@ describe("createPageHelper", () => {
     });
   });
 
+  it("page.wait with a number past the MCP request timeout sleeps in chunks (#157)", async () => {
+    callTool.mockResolvedValue("");
+
+    const page = createPageHelper(callTool);
+    await page.wait(45000);
+
+    expect(callTool.mock.calls).toEqual([
+      [
+        "evaluate_script",
+        { function: "() => (new Promise(r => setTimeout(r, 20000)))" },
+      ],
+      [
+        "evaluate_script",
+        { function: "() => (new Promise(r => setTimeout(r, 20000)))" },
+      ],
+      [
+        "evaluate_script",
+        { function: "() => (new Promise(r => setTimeout(r, 5000)))" },
+      ],
+    ]);
+  });
+
   it("page.wait with string sends a callable that resolves once the selector matches", async () => {
     callTool.mockResolvedValueOnce("");
 

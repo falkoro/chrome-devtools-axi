@@ -8,7 +8,12 @@ import {
   stopBridge,
 } from "./client.js";
 import { getCurrentGeneration } from "./generation.js";
-import { readStdin, runScript, wrapJsExpression } from "./run.js";
+import {
+  readStdin,
+  runScript,
+  waitForDuration,
+  wrapJsExpression,
+} from "./run.js";
 
 export { wrapJsExpression };
 import {
@@ -1205,9 +1210,7 @@ async function handleWait(args: string[]): Promise<string> {
 
   const isNumeric = /^\d+$/.test(target);
   if (isNumeric) {
-    await callTool("evaluate_script", {
-      function: wrapJsExpression(`new Promise(r => setTimeout(r, ${target}))`),
-    });
+    await waitForDuration(callTool, Number(target));
   } else {
     await callTool("wait_for", { text: [target] });
   }

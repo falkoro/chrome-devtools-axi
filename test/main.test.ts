@@ -342,6 +342,26 @@ describe("main", () => {
     expect(process.exitCode).toBeUndefined();
   });
 
+  it("wait <ms> past the MCP request timeout sends sleeps that each fit under it (#157)", async () => {
+    vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    callTool.mockResolvedValue("");
+
+    await main(["wait", "65000"]);
+
+    const delays: number[] = [];
+    vi.stubGlobal("setTimeout", (_fire: () => void, ms: number) => {
+      delays.push(ms);
+      return delays.length;
+    });
+    for (const [tool, args] of callTool.mock.calls) {
+      expect(tool).toBe("evaluate_script");
+      new Function(`return (${args.function})`)()();
+    }
+    vi.unstubAllGlobals();
+    expect(delays).toEqual([20000, 20000, 20000, 5000]);
+    expect(process.exitCode).toBeUndefined();
+  });
+
   it("recovers open by creating a page when the browser is not yet connected", async () => {
     const write = vi
       .spyOn(process.stdout, "write")

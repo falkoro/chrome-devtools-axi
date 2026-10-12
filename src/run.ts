@@ -145,6 +145,29 @@ export function isUidRef(s: string): boolean {
 
 const DEFAULT_WAIT_TIMEOUT = 30_000;
 
+/**
+ * Longest single in-page sleep. The bridge's MCP client fails any request
+ * still pending after the SDK's 60s default (`MCP error -32001: Request timed
+ * out`, issue #157), so a duration wait is sent as consecutive sleeps of at
+ * most this long that sum to the requested time.
+ */
+const WAIT_CHUNK_MS = 20_000;
+
+/** Wait `ms` in the page, one `evaluate_script` sleep per chunk. */
+export async function waitForDuration(
+  callTool: CallTool,
+  ms: number,
+): Promise<void> {
+  let remaining = ms;
+  do {
+    const chunk = Math.min(remaining, WAIT_CHUNK_MS);
+    await callTool("evaluate_script", {
+      function: wrapJsExpression(`new Promise(r => setTimeout(r, ${chunk}))`),
+    });
+    remaining -= chunk;
+  } while (remaining > 0);
+}
+
 // --- Page helper ---
 
 export interface OpenResult {
@@ -216,7 +239,7 @@ export function createPageHelper(callTool: CallTool): PageHelper {
 
     async wait(msOrSelector: number | string, timeout?: number): Promise<void> {
       if (typeof msOrSelector === "number") {
-        await callFunction(`new Promise(r => setTimeout(r, ${msOrSelector}))`);
+        await waitForDuration(callTool, msOrSelector);
       } else {
         const ms = timeout ?? DEFAULT_WAIT_TIMEOUT;
         const sel = JSON.stringify(msOrSelector);
