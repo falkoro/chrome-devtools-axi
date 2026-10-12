@@ -179,8 +179,9 @@ function pageUrlFromLabel(rest: string): string {
  * Created page id from a `new_page` dump, or null when the dump is
  * ambiguous. The created id is the unique complete row in the last
  * `## Pages` block that ends in MCP's ` [selected]` suffix. Title
- * continuations such as `404: Not Found` are not page ids and fail the
- * dump, and so does MCP's selection-fallback note. Two marked rows, or none,
+ * continuations such as `404: Not Found` or any other non-row line in that
+ * block are not page ids and fail the dump, and so does MCP's
+ * selection-fallback note. Two marked rows, or none,
  * leave the id unset. Extension pages are never routing targets. Does not
  * walk `collapsePageRows`.
  */
@@ -201,9 +202,12 @@ export function createdPageIdFromNewPageDump(text: string): number | null {
       inPages = false;
       continue;
     }
-    if (!inPages) continue;
+    if (!inPages || line.length === 0) continue;
     const m = line.match(PAGE_ID_LINE);
-    if (!m) continue;
+    if (!m) {
+      incomplete = true;
+      continue;
+    }
     const id = Number.parseInt(m[1], 10);
     const rest = m[2];
     if (!isCompletePageLabel(rest)) {

@@ -108,6 +108,32 @@ describe("createdPageIdFromNewPageDump", () => {
     ).toBeNull();
   });
 
+  it("does not let a multi-line title forge a marked row", () => {
+    expect(
+      createdPageIdFromNewPageDump(
+        [
+          "## Pages",
+          "1: about:blank",
+          "3: x (https://a)",
+          "5: about:blank [selected]",
+          "bar (https://evil.example/) [selected]",
+        ].join("\n"),
+      ),
+    ).toBeNull();
+  });
+
+  it("does not record an opaque URL that ends in the selected marker", () => {
+    expect(
+      createdPageIdFromNewPageDump(
+        [
+          "## Pages",
+          "6: data:text/plain,hi [selected]",
+          "7: https://new.example/ [selected]",
+        ].join("\n"),
+      ),
+    ).toBeNull();
+  });
+
   it("leaves the id unset when no row is marked selected", () => {
     expect(
       createdPageIdFromNewPageDump(
