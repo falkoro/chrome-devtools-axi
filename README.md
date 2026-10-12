@@ -205,6 +205,8 @@ chrome-devtools-axi eval "() => { const rows = [...document.querySelectorAll('tr
 | `closepage <id>`  | Close a tab by ID           |
 | `resize <w> <h>`  | Resize the browser viewport |
 
+`resize` reads the page's viewport back and fails, naming the actual size, when it did not reach the requested size (an emulated viewport or the window's minimum size can hold it); use `emulate --viewport` then.
+
 Page-scoped tools require a selected page. `pages` only lists tabs and never changes the selection. `selectpage` sets it. `newpage` selects the new tab only when its own listing contains exactly one complete row whose URL matches the requested URL (`about:blank` plus that URL counts); a title continuation, no match, or two matches leaves the selection unset, and the next page-scoped command fails until `selectpage`. The selected column in `pages` is AXI's selection, not the MCP `[selected]` marker. Closing the selected tab clears it. There is no automatic retarget onto another tab.
 
 If the browser reconnects in process, every page id is reissued and the selection is dropped. A command that named a page fails instead of running against a new id. `open` then creates a new tab rather than restoring the previous one. If a selected tab is already gone, the command instead fails with a page-unavailable error and clears that selection.

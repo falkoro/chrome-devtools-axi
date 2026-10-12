@@ -376,7 +376,8 @@ examples:
   chrome-devtools-axi closepage 2`,
 
   resize: `usage: chrome-devtools-axi resize <width> <height>
-Resize the browser viewport.
+Resize the browser viewport. Fails, naming the actual size, when the page's
+viewport does not reach the requested size; use \`emulate --viewport\` then.
 
 args:
   <width>   Width in pixels (required)
@@ -1376,6 +1377,24 @@ async function handleResize(args: string[]): Promise<string> {
     ]);
   }
   await callTool("resize_page", { width, height });
+  // resize_page sizes the window, which an emulated viewport or the window's
+  // minimum size can leave without effect; report what the page actually got.
+  const [actualWidth, actualHeight] = JSON.parse(
+    parseEvalResult(
+      await callTool("evaluate_script", {
+        function: "() => [innerWidth, innerHeight]",
+      }),
+    ),
+  );
+  if (actualWidth !== width || actualHeight !== height) {
+    throw new CdpError(
+      `Viewport is ${actualWidth}x${actualHeight}, not the requested ${width}x${height} (an emulated viewport or the window's minimum size can hold it)`,
+      "BROWSER_ERROR",
+      [
+        `Run \`chrome-devtools-axi emulate --viewport ${width}x${height}x1\` to emulate that viewport size`,
+      ],
+    );
+  }
   return encode({ resized: { width, height } });
 }
 

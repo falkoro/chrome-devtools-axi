@@ -651,6 +651,51 @@ describe("main", () => {
 
     expect(callTool).toHaveBeenCalledWith("performance_stop_trace", {});
   });
+
+  const evalReturned = (value: string) =>
+    "Script ran on page and returned:\n```json\n" + value + "\n```";
+
+  it("resize confirms the size only after reading the viewport back", async () => {
+    const write = vi
+      .spyOn(process.stdout, "write")
+      .mockImplementation(() => true);
+    callTool
+      .mockResolvedValueOnce("## Pages\n1: about:blank [selected]")
+      .mockResolvedValueOnce(evalReturned("[390,844]"));
+
+    await main(["resize", "390", "844"]);
+
+    expect(callTool.mock.calls.map(([tool]) => tool)).toEqual([
+      "resize_page",
+      "evaluate_script",
+    ]);
+    expect(
+      new Function(`return (${callTool.mock.calls[1][1].function})`)(),
+    ).toBeTypeOf("function");
+    expect(decode(String(write.mock.calls[0]?.[0]))).toEqual({
+      resized: { width: 390, height: 844 },
+    });
+    expect(process.exitCode).toBeUndefined();
+  });
+
+  it("resize fails with the actual size when the viewport did not change (#154)", async () => {
+    const write = vi
+      .spyOn(process.stdout, "write")
+      .mockImplementation(() => true);
+    callTool
+      .mockResolvedValueOnce("## Pages\n1: about:blank [selected]")
+      .mockResolvedValueOnce(evalReturned("[1200,2029]"));
+
+    await main(["resize", "390", "844"]);
+
+    const output = String(write.mock.calls[0]?.[0]);
+    expect(output).toContain(
+      "Viewport is 1200x2029, not the requested 390x844",
+    );
+    expect(output).toContain("emulate --viewport 390x844x1");
+    expect(output).not.toContain("resized");
+    expect(process.exitCode).toBe(1);
+  });
 });
 
 describe("pages selected overlay", () => {
