@@ -921,7 +921,7 @@ describe("callTool pageId routing", () => {
     });
   });
 
-  it("records a two-row about:blank plus args.url dump so later snapshot works", async () => {
+  it("records a two-row about:blank plus created-tab dump so later snapshot works", async () => {
     await withFakeBridge(
       async (fake) => {
         await callTool("new_page", { url: "https://example.com/" });
@@ -966,7 +966,7 @@ describe("callTool pageId routing", () => {
       {
         listPages: "## Pages\n1: https://attacker.example/ [selected]",
         toolResults: {
-          new_page: "## Pages\n1: https://new.example/",
+          new_page: "## Pages\n1: https://new.example/ [selected]",
         },
       },
     );
@@ -999,15 +999,14 @@ describe("callTool pageId routing", () => {
     );
   });
 
-  it("leaves routing unset when two complete rows both match args.url", async () => {
+  it("records the created tab when another tab already has the same URL", async () => {
     await withFakeBridge(
       async (fake) => {
         await callTool("new_page", { url: "https://example.com/" });
-        await expect(callTool("take_snapshot")).rejects.toMatchObject({
-          message: "No page is currently selected",
-        });
+        await callTool("take_snapshot");
         expect(fake.calls).toEqual([
           { name: "new_page", args: { url: "https://example.com/" } },
+          { name: "take_snapshot", args: { pageId: 2 } },
         ]);
       },
       {
@@ -1022,7 +1021,32 @@ describe("callTool pageId routing", () => {
     );
   });
 
-  it("leaves routing unset when no complete row URL matches args.url", async () => {
+  it("records the created tab when its URL changed while loading", async () => {
+    await withFakeBridge(
+      async (fake) => {
+        await callTool("new_page", { url: "https://new.example/" });
+        await callTool("evaluate_script", { function: "() => 1" });
+        expect(fake.calls).toEqual([
+          { name: "new_page", args: { url: "https://new.example/" } },
+          {
+            name: "evaluate_script",
+            args: { function: "() => 1", pageId: 9 },
+          },
+        ]);
+      },
+      {
+        toolResults: {
+          new_page: [
+            "## Pages",
+            "1: https://example.com/",
+            "9: New (https://new.example/?from=redirect) [selected]",
+          ].join("\n"),
+        },
+      },
+    );
+  });
+
+  it("leaves routing unset when no row in the new_page dump is marked selected", async () => {
     await withFakeBridge(
       async (fake) => {
         await callTool("new_page", { url: "https://new.example/" });
@@ -1040,7 +1064,7 @@ describe("callTool pageId routing", () => {
           new_page: [
             "## Pages",
             "1: https://example.com/",
-            "9: https://attacker.example/ [selected]",
+            "9: https://new.example/",
           ].join("\n"),
         },
       },
