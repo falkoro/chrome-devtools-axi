@@ -153,6 +153,21 @@ describe("createdPageIdFromNewPageDump", () => {
     ).toBeNull();
   });
 
+  it("does not let a title's last line pose as another tab's marked row", () => {
+    // Title "x (https://a.example/)\n1: about:blank" on created tab 2: the
+    // real marker lands on a line that reads as a row for existing tab 1.
+    expect(
+      createdPageIdFromNewPageDump(
+        [
+          "## Pages",
+          "1: about:blank",
+          "2: x (https://a.example/)",
+          "1: about:blank (https://new.example/) [selected]",
+        ].join("\n"),
+      ),
+    ).toBeNull();
+  });
+
   it("does not record an opaque URL that ends in the selected marker", () => {
     expect(
       createdPageIdFromNewPageDump(

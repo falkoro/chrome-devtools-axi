@@ -185,7 +185,8 @@ function pageUrlFromLabel(rest: string): string {
  * whole dump ending in ` [selected]` is therefore counted, and anything but
  * exactly one (the matched row) fails the dump. Title continuations such as
  * `404: Not Found` or any other non-row line in the block, a second
- * `## Pages` header, and MCP's selection-fallback note also fail it.
+ * `## Pages` header, a repeated page id (a title line posing as an existing
+ * tab's row), and MCP's selection-fallback note also fail it.
  * Extension pages are never routing targets. Does not walk
  * `collapsePageRows`.
  */
@@ -193,6 +194,7 @@ export function createdPageIdFromNewPageDump(text: string): number | null {
   let inPages = false;
   let seenPages = false;
   const matchedIds: number[] = [];
+  const listedIds = new Set<number>();
   let markedLines = 0;
   let incomplete = false;
   for (const raw of text.split(/\r?\n/)) {
@@ -215,6 +217,8 @@ export function createdPageIdFromNewPageDump(text: string): number | null {
       continue;
     }
     const id = Number.parseInt(m[1], 10);
+    if (listedIds.has(id)) return null;
+    listedIds.add(id);
     const rest = m[2];
     if (!isCompletePageLabel(rest)) {
       incomplete = true;
