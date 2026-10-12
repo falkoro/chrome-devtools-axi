@@ -686,9 +686,10 @@ describe("main", () => {
     await main(["resize", "390", "844"]);
     const source = callTool.mock.calls[1][1].function;
 
-    const readBack = async (sizes: [number, number][]) => {
+    const readBack = async (sizes: [number, number][], sleepMs?: number) => {
       const delays: number[] = [];
       let step = 0;
+      let clock = 0;
       const page = {
         get innerWidth() {
           return sizes[Math.min(step, sizes.length - 1)][0];
@@ -696,14 +697,16 @@ describe("main", () => {
         get innerHeight() {
           return sizes[Math.min(step, sizes.length - 1)][1];
         },
+        Date: { now: () => clock },
         setTimeout(resolve: () => void, ms: number) {
           delays.push(ms);
+          clock += sleepMs ?? ms;
           step++;
           resolve();
         },
       };
       const run = new Function("page", `with (page) return (${source})`)(page);
-      return { result: await run(), delays };
+      return { result: await run(), delays, elapsed: clock };
     };
 
     const settling = await readBack([
@@ -719,8 +722,14 @@ describe("main", () => {
       [500, 844],
     ]);
     expect(stuck.result).toEqual([500, 844]);
-    expect(stuck.delays).toHaveLength(20);
+    expect(stuck.elapsed).toBeGreaterThanOrEqual(1000);
+    expect(stuck.elapsed).toBeLessThanOrEqual(1050);
     expect(stuck.delays.every((ms) => ms === 50)).toBe(true);
+
+    // A hidden tab throttles timers to about one wake-up per second.
+    const throttled = await readBack([[500, 844]], 1000);
+    expect(throttled.result).toEqual([500, 844]);
+    expect(throttled.elapsed).toBeLessThanOrEqual(2000);
   });
 
   it("resize fails with the actual size when the viewport did not change (#154)", async () => {

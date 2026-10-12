@@ -1384,7 +1384,8 @@ async function handleResize(args: string[]): Promise<string> {
     parseEvalResult(
       await callTool("evaluate_script", {
         function: `async () => {
-  for (let i = 0; i < 20 && (innerWidth !== ${width} || innerHeight !== ${height}); i++) {
+  const end = Date.now() + 1000;
+  while ((innerWidth !== ${width} || innerHeight !== ${height}) && Date.now() < end) {
     await new Promise((resolve) => setTimeout(resolve, 50));
   }
   return [innerWidth, innerHeight];
