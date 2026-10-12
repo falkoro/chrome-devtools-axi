@@ -177,25 +177,31 @@ function pageUrlFromLabel(rest: string): string {
 
 /**
  * Created page id from a `new_page` dump, or null when the dump is
- * ambiguous. The created id is the unique complete row in the last
- * `## Pages` block that ends in MCP's ` [selected]` suffix. Title
- * continuations such as `404: Not Found` or any other non-row line in that
- * block are not page ids and fail the dump, and so does MCP's
- * selection-fallback note. Two marked rows, or none,
- * leave the id unset. Extension pages are never routing targets. Does not
- * walk `collapsePageRows`.
+ * ambiguous. The created id is the unique complete row in the one
+ * `## Pages` block that ends in MCP's ` [selected]` suffix. Titles are
+ * untrusted: one with newlines can split the real row and push its tail past
+ * a forged header, but MCP always appends ` [selected]` to the created tab's
+ * row, so the real marker is still somewhere in the dump. Every line of the
+ * whole dump ending in ` [selected]` is therefore counted, and anything but
+ * exactly one (the matched row) fails the dump. Title continuations such as
+ * `404: Not Found` or any other non-row line in the block, a second
+ * `## Pages` header, and MCP's selection-fallback note also fail it.
+ * Extension pages are never routing targets. Does not walk
+ * `collapsePageRows`.
  */
 export function createdPageIdFromNewPageDump(text: string): number | null {
   let inPages = false;
-  let matchedIds: number[] = [];
+  let seenPages = false;
+  const matchedIds: number[] = [];
+  let markedLines = 0;
   let incomplete = false;
   for (const raw of text.split(/\r?\n/)) {
     const line = raw.trim();
     if (MCP_SELECTION_FALLBACK.test(line)) return null;
+    if (MCP_SELECTED_SUFFIX.test(line)) markedLines++;
     if (MCP_PAGES_HEADER.test(line)) {
-      inPages = true;
-      matchedIds = [];
-      incomplete = false;
+      if (seenPages) return null;
+      seenPages = inPages = true;
       continue;
     }
     if (MCP_OTHER_SECTION.test(line)) {
@@ -219,6 +225,6 @@ export function createdPageIdFromNewPageDump(text: string): number | null {
     if (MCP_SELECTED_SUFFIX.test(rest)) matchedIds.push(id);
   }
   if (incomplete) return null;
-  if (matchedIds.length !== 1) return null;
+  if (matchedIds.length !== 1 || markedLines !== 1) return null;
   return matchedIds[0];
 }

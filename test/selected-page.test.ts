@@ -122,6 +122,37 @@ describe("createdPageIdFromNewPageDump", () => {
     ).toBeNull();
   });
 
+  it("does not let a title forge a second Pages block that hides the real row", () => {
+    expect(
+      createdPageIdFromNewPageDump(
+        [
+          "## Pages",
+          "1: about:blank",
+          "2: x",
+          "## Pages",
+          "1: about:blank [selected]",
+          "## Extension Pages",
+          "x (https://new.example/) [selected]",
+        ].join("\n"),
+      ),
+    ).toBeNull();
+  });
+
+  it("does not let a title hide the real row's marker behind another section header", () => {
+    expect(
+      createdPageIdFromNewPageDump(
+        [
+          "## Pages",
+          "1: about:blank",
+          "2: x (https://a.example/)",
+          "1: about:blank [selected]",
+          "## WebMCP tools",
+          "x (https://new.example/) [selected]",
+        ].join("\n"),
+      ),
+    ).toBeNull();
+  });
+
   it("does not record an opaque URL that ends in the selected marker", () => {
     expect(
       createdPageIdFromNewPageDump(
