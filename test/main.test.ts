@@ -678,6 +678,51 @@ describe("main", () => {
     expect(process.exitCode).toBeUndefined();
   });
 
+  it("resize read-back waits up to about a second for the window to settle", async () => {
+    vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    callTool
+      .mockResolvedValueOnce("## Pages\n1: about:blank [selected]")
+      .mockResolvedValueOnce(evalReturned("[390,844]"));
+    await main(["resize", "390", "844"]);
+    const source = callTool.mock.calls[1][1].function;
+
+    const readBack = async (sizes: [number, number][]) => {
+      const delays: number[] = [];
+      let step = 0;
+      const page = {
+        get innerWidth() {
+          return sizes[Math.min(step, sizes.length - 1)][0];
+        },
+        get innerHeight() {
+          return sizes[Math.min(step, sizes.length - 1)][1];
+        },
+        setTimeout(resolve: () => void, ms: number) {
+          delays.push(ms);
+          step++;
+          resolve();
+        },
+      };
+      const run = new Function("page", `with (page) return (${source})`)(page);
+      return { result: await run(), delays };
+    };
+
+    const settling = await readBack([
+      [1280, 720],
+      [1280, 720],
+      [390, 844],
+    ]);
+    expect(settling.result).toEqual([390, 844]);
+    expect(settling.delays).toEqual([50, 50]);
+
+    const stuck = await readBack([
+      [1280, 720],
+      [500, 844],
+    ]);
+    expect(stuck.result).toEqual([500, 844]);
+    expect(stuck.delays).toHaveLength(20);
+    expect(stuck.delays.every((ms) => ms === 50)).toBe(true);
+  });
+
   it("resize fails with the actual size when the viewport did not change (#154)", async () => {
     const write = vi
       .spyOn(process.stdout, "write")

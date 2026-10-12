@@ -1377,18 +1377,24 @@ async function handleResize(args: string[]): Promise<string> {
     ]);
   }
   await callTool("resize_page", { width, height });
-  // resize_page sizes the window, which an emulated viewport or the window's
-  // minimum size can leave without effect; report what the page actually got.
+  // resize_page sizes the window, which settles asynchronously and which an
+  // emulated viewport, page zoom or the window's minimum size can leave
+  // without effect; report what the page actually got.
   const [actualWidth, actualHeight] = JSON.parse(
     parseEvalResult(
       await callTool("evaluate_script", {
-        function: "() => [innerWidth, innerHeight]",
+        function: `async () => {
+  for (let i = 0; i < 20 && (innerWidth !== ${width} || innerHeight !== ${height}); i++) {
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+  return [innerWidth, innerHeight];
+}`,
       }),
     ),
   );
   if (actualWidth !== width || actualHeight !== height) {
     throw new CdpError(
-      `Viewport is ${actualWidth}x${actualHeight}, not the requested ${width}x${height} (an emulated viewport or the window's minimum size can hold it)`,
+      `Viewport is ${actualWidth}x${actualHeight}, not the requested ${width}x${height} (an emulated viewport, page zoom or the window's minimum size can hold it)`,
       "BROWSER_ERROR",
       [
         `Run \`chrome-devtools-axi emulate --viewport ${width}x${height}x1\` to emulate that viewport size`,
